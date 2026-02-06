@@ -1,13 +1,16 @@
 name: Daily Market Analysis
 
 on:
-  schedule:
+  push:                   # main 브랜치에 push될 때 바로 실행
+    branches:
+      - main
+  workflow_dispatch:       # 수동 실행 옵션
+  schedule:                # 기존 cron도 유지
     - cron: "0 22 * * 1-5"  # 미국 동부시간 기준 월~금 22시 실행
-  workflow_dispatch:          # 수동 실행 옵션
 
 jobs:
   run-analysis:
-    runs-on: ubuntu-latest     # Node 아님, Ubuntu VM에서 Python 실행
+    runs-on: ubuntu-latest   # Node 아님, Ubuntu VM에서 Python 실행
 
     steps:
       - name: Checkout repository
