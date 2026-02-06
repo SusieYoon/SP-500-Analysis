@@ -1,114 +1,49 @@
-# analysis.py
-import yfinance as yf
 import pandas as pd
-from datetime import datetime
+import yfinance as yf
+import datetime
 
-# =========================
-# 1. 설정
-# =========================
-UNIVERSE = "SP500"   # 나중에 NASDAQ100 등으로 확장 가능
-TOP_N = 30
+today = datetime.datetime.now().strftime("%Y-%m-%d")
 
-TODAY = datetime.now().strftime("%Y-%m-%d")
+# 예시 S&P 500 상위 30개 종목
+sp500_symbols = [
+    "AAPL","MSFT","GOOGL","AMZN","NVDA",
+    "TSLA","BRK-B","META","JPM","JNJ",
+    "V","PG","UNH","HD","MA",
+    "DIS","BAC","VZ","ADBE","CMCSA",
+    "NFLX","KO","PEP","INTC","T",
+    "CSCO","XOM","PFE","ABBV","CRM"
+]
 
-# =========================
-# 2. 종목 리스트 불러오기
-# =========================
-def get_universe():
-    # S&P500 티커 리스트 (간단 버전)
-    table = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-    return table[0]["Symbol"].tolist()
+top_stocks = []
 
-# =========================
-# 3. 데이터 다운로드
-# =========================
-def load_price_data(tickers):
-    data = yf.download(
-        tickers,
-        period="3mo",
-        interval="1d",
-        group_by="ticker",
-        auto_adjust=True,
-        threads=True
-    )
-    return data
-
-# =========================
-# 4. 지표 계산
-# =========================
-def compute_indicators(df):
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA60"] = df["Close"].rolling(60).mean()
-    df["VOL_MA20"] = df["Volume"].rolling(20).mean()
-    df["RET"] = df["Close"].pct_change() * 100
-    return df
-
-# =========================
-# 5. 필터 + 점수화
-# =========================
-def score_stock(df):
-    score = 0
-
-    if df["RET"].iloc[-1] > 3:
-        score += 1
-    if df["Volume"].iloc[-1] > 1.5 * df["VOL_MA20"].iloc[-1]:
-        score += 1
-    if df["MA20"].iloc[-1] > df["MA60"].iloc[-1]:
-        score += 1
-    if df["Close"].iloc[-1] > df["MA20"].iloc[-1]:
-        score += 1
-
-    return score
-
-# =========================
-# 6. 메인 로직
-# =========================
-def main():
-    tickers = get_universe()
-    raw = load_price_data(tickers)
-
-    results = []
-
-    for ticker in tickers:
-        try:
-            df = raw[ticker].dropna()
-            df = compute_indicators(df)
-
-            score = score_stock(df)
-            ret = df["RET"].iloc[-1]
-
-            results.append({
-                "Ticker": ticker,
-                "Return(%)": round(ret, 2),
-                "Score": score,
-                "Volume": int(df["Volume"].iloc[-1])
-            })
-
-        except Exception:
+# 데이터 다운로드 + 예외 처리
+for symbol in sp500_symbols:
+    try:
+        data = yf.download(symbol, period="2d", progress=False)
+        if data.empty:
+            print(f"No data for {symbol}, skipping.")
             continue
+        close_price = data['Close'].iloc[-1]
+        prev_close = data['Close'].iloc[-2] if len(data) > 1 else close_price
+        pct_change = ((close_price - prev_close) / prev_close) * 100
+        top_stocks.append((symbol, pct_change))
+    except Exception as e:
+        print(f"Error processing {symbol}: {e}")
 
-    result_df = pd.DataFrame(results)
-    result_df = result_df.sort_values(
-        ["Score", "Return(%)"],
-        ascending=False
-    ).head(TOP_N)
+# 내림차순 정렬
+top_stocks.sort(key=lambda x: x[1], reverse=True)
 
-    # =========================
-    # 7. 저장
-    # =========================
-    result_df.to_csv(f"top30_{TODAY}.csv", index=False)
+# CSV 저장
+top_df = pd.DataFrame(top_stocks, columns=["Symbol", "PctChange"])
+top_csv_file = f"top30_{today}.csv"
+top_df.to_csv(top_csv_file, index=False)
 
-    summary = {
-        "date": TODAY,
-        "avg_return": round(result_df["Return(%)"].mean(), 2),
-        "avg_score": round(result_df["Score"].mean(), 2),
-        "count": len(result_df)
-    }
+# summary.txt 생성
+summary_file = f"summary_{today}.txt"
+with open(summary_file, "w") as f:
+    f.write("Top 30 S&P500 Stocks by Daily Change (%)\n")
+    f.write("="*40 + "\n")
+    for symbol, pct in top_stocks:
+        f.write(f"{symbol}: {pct:.2f}%\n")
 
-    with open(f"summary_{TODAY}.txt", "w") as f:
-        f.write(str(summary))
-
-    print("✅ Daily analysis complete")
-
-if __name__ == "__main__":
-    main()
+print(f"Analysis complete. Files generated: {top_csv_file}, {summary_file}")
