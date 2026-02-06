@@ -2,15 +2,15 @@ name: Daily Market Analysis
 
 on:
   schedule:
-    - cron: "0 22 * * 1-5"
-  workflow_dispatch:
+    - cron: "0 22 * * 1-5"  # 미국 동부시간 기준 월~금 22시 실행
+  workflow_dispatch:          # 수동 실행 옵션
 
 jobs:
   run-analysis:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest     # Node 아님, Ubuntu VM에서 Python 실행
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -20,6 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run analysis
