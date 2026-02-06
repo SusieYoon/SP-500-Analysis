@@ -1,10 +1,11 @@
 import pandas as pd
 import yfinance as yf
 import datetime
+import numpy as np
 
 today = datetime.datetime.now().strftime("%Y-%m-%d")
 
-# 예시 S&P 500 상위 30개 종목
+# 예시 S&P500 상위 30개 종목
 sp500_symbols = [
     "AAPL","MSFT","GOOGL","AMZN","NVDA",
     "TSLA","BRK-B","META","JPM","JNJ",
@@ -14,36 +15,57 @@ sp500_symbols = [
     "CSCO","XOM","PFE","ABBV","CRM"
 ]
 
-top_stocks = []
+results = []
 
-# 데이터 다운로드 + 예외 처리
 for symbol in sp500_symbols:
     try:
-        data = yf.download(symbol, period="2d", progress=False)
-        if data.empty:
-            print(f"No data for {symbol}, skipping.")
+        # 데이터 다운로드 (최근 35일)
+        data = yf.download(symbol, period="35d", progress=False)
+        if data.empty or len(data) < 2:
+            print(f"[Warning] Not enough data for {symbol}, skipping.")
             continue
-        close_price = data['Close'].iloc[-1]
-        prev_close = data['Close'].iloc[-2] if len(data) > 1 else close_price
-        pct_change = ((close_price - prev_close) / prev_close) * 100
-        top_stocks.append((symbol, pct_change))
+
+        # 1) 단기 상승률
+        try:
+            pct_change = ((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100
+        except IndexError:
+            pct_change = 0
+
+        # 2) 변동성 (최근 30일 표준편차)
+        volatility = data['Close'][-30:].pct_change().std() * 100 if len(data) >= 30 else 0
+
+        # 3) 거래량 비율 (오늘 vs 최근 5일 평균)
+        avg_vol5 = data['Volume'][-6:-1].mean() if len(data) >= 6 else 1
+        vol_ratio = data['Volume'].iloc[-1] / avg_vol5
+
+        # 4) 모멘텀 (최근 5일 수익률 합)
+        momentum = data['Close'].pct_change()[-5:].sum() * 100 if len(data) >= 5 else 0
+
+        # 종합 점수
+        score = pct_change*0.4 + momentum*0.3 + vol_ratio*0.2 - volatility*0.1
+
+        results.append((symbol, score, pct_change, momentum, vol_ratio, volatility))
+
     except Exception as e:
-        print(f"Error processing {symbol}: {e}")
+        print(f"[Error] Processing {symbol}: {e}")
+        continue
 
-# 내림차순 정렬
-top_stocks.sort(key=lambda x: x[1], reverse=True)
+# 점수 내림차순 top30
+results.sort(key=lambda x: x[1], reverse=True)
+top_results = results[:30]
 
-# CSV 저장
-top_df = pd.DataFrame(top_stocks, columns=["Symbol", "PctChange"])
-top_csv_file = f"top30_{today}.csv"
-top_df.to_csv(top_csv_file, index=False)
+# CSV 생성
+columns = ["Symbol","Score","PctChange(%)","Momentum(%)","VolumeRatio","Volatility(%)"]
+df_top = pd.DataFrame(top_results, columns=columns)
+csv_file = f"top30_{today}.csv"
+df_top.to_csv(csv_file, index=False)
 
 # summary.txt 생성
 summary_file = f"summary_{today}.txt"
 with open(summary_file, "w") as f:
-    f.write("Top 30 S&P500 Stocks by Daily Change (%)\n")
-    f.write("="*40 + "\n")
-    for symbol, pct in top_stocks:
-        f.write(f"{symbol}: {pct:.2f}%\n")
+    f.write("Top 30 S&P500 Stocks by Composite Score\n")
+    f.write("="*60 + "\n")
+    for row in top_results:
+        f.write(f"{row[0]} | Score: {row[1]:.2f} | Change: {row[2]:.2f}% | Momentum: {row[3]:.2f}% | VolRatio: {row[4]:.2f} | Volatility: {row[5]:.2f}%\n")
 
-print(f"Analysis complete. Files generated: {top_csv_file}, {summary_file}")
+print(f"Enhanced Analysis complete. Files: {csv_file}, {summary_file}")
