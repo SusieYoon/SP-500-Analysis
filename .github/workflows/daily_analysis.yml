@@ -1,6 +1,6 @@
 name: Daily Market Analysis
 
-"on":
+on:
   schedule:
     - cron: "0 22 * * 1-5"
   workflow_dispatch:
@@ -33,4 +33,3 @@ jobs:
           path: |
             *.csv
             *.txt
-
