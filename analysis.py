@@ -1,6 +1,7 @@
 import pandas as pd
 import yfinance as yf
 import datetime
+import time
 import numpy as np
 
 today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -18,37 +19,37 @@ sp500_symbols = [
 results = []
 
 for symbol in sp500_symbols:
-    try:
-        # 데이터 다운로드 (최근 35일)
-        data = yf.download(symbol, period="35d", progress=False)
-        if data.empty or len(data) < 2:
-            print(f"[Warning] Not enough data for {symbol}, skipping.")
-            continue
-
-        # 1) 단기 상승률
+    data = pd.DataFrame()
+    # 최대 3회 재시도
+    for attempt in range(3):
         try:
-            pct_change = ((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100
-        except IndexError:
-            pct_change = 0
-
-        # 2) 변동성 (최근 30일 표준편차)
-        volatility = data['Close'][-30:].pct_change().std() * 100 if len(data) >= 30 else 0
-
-        # 3) 거래량 비율 (오늘 vs 최근 5일 평균)
-        avg_vol5 = data['Volume'][-6:-1].mean() if len(data) >= 6 else 1
-        vol_ratio = data['Volume'].iloc[-1] / avg_vol5
-
-        # 4) 모멘텀 (최근 5일 수익률 합)
-        momentum = data['Close'].pct_change()[-5:].sum() * 100 if len(data) >= 5 else 0
-
-        # 종합 점수
-        score = pct_change*0.4 + momentum*0.3 + vol_ratio*0.2 - volatility*0.1
-
-        results.append((symbol, score, pct_change, momentum, vol_ratio, volatility))
-
-    except Exception as e:
-        print(f"[Error] Processing {symbol}: {e}")
+            data = yf.download(symbol, period="35d", progress=False)
+            if not data.empty:
+                break
+        except Exception as e:
+            print(f"[Attempt {attempt+1}] Error downloading {symbol}: {e}")
+            time.sleep(2)  # 잠시 대기 후 재시도
+    if data.empty or len(data) < 2:
+        print(f"[Warning] No data for {symbol}, skipping.")
         continue
+
+    # 단기 상승률
+    pct_change = ((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100
+
+    # 변동성
+    volatility = data['Close'][-30:].pct_change().std() * 100 if len(data) >= 30 else 0
+
+    # 거래량 비율
+    avg_vol5 = data['Volume'][-6:-1].mean() if len(data) >= 6 else 1
+    vol_ratio = data['Volume'].iloc[-1] / avg_vol5
+
+    # 모멘텀
+    momentum = data['Close'].pct_change()[-5:].sum() * 100 if len(data) >= 5 else 0
+
+    # 종합 점수
+    score = pct_change*0.4 + momentum*0.3 + vol_ratio*0.2 - volatility*0.1
+
+    results.append((symbol, score, pct_change, momentum, vol_ratio, volatility))
 
 # 점수 내림차순 top30
 results.sort(key=lambda x: x[1], reverse=True)
@@ -68,4 +69,4 @@ with open(summary_file, "w") as f:
     for row in top_results:
         f.write(f"{row[0]} | Score: {row[1]:.2f} | Change: {row[2]:.2f}% | Momentum: {row[3]:.2f}% | VolRatio: {row[4]:.2f} | Volatility: {row[5]:.2f}%\n")
 
-print(f"Enhanced Analysis complete. Files: {csv_file}, {summary_file}")
+print(f"[Info] Analysis complete. Files generated: {csv_file}, {summary_file}")
